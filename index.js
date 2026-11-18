@@ -1,3 +1,4 @@
+
 import makeWASocket, {
   Browsers,
   DisconnectReason,
@@ -283,6 +284,7 @@ async function handleIncomingMessage(sock, message) {
   if (quickAnswer) {
     await sleep(responseDelay(rawText));
     await sock.sendMessage(jid, { text: quickAnswer });
+    await sleep(2000); // Two-second cooldown after every successful answer.
     return;
   }
 
@@ -292,6 +294,7 @@ async function handleIncomingMessage(sock, message) {
 
   await sleep(responseDelay(rawText));
   await sock.sendMessage(jid, { text: output });
+  await sleep(2000); // Two-second cooldown after every successful answer.
 }
 
 async function requestPairingCode(sock, generation) {
