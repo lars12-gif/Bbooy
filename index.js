@@ -1,7 +1,8 @@
 import makeWASocket, {
   Browsers,
   DisconnectReason,
-  initAuthCreds
+  initAuthCreds,
+  downloadMediaMessage
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
 
@@ -9,6 +10,8 @@ import pino from 'pino';
 // You may also set OWNER_NUMBER in your hosting environment variables.
 const OWNER_NUMBER = String(process.env.OWNER_NUMBER || '15879975734').replace(/\D/g, '');
 const LOG_LEVEL = process.env.LOG_LEVEL || 'warn';
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
+const VISION_MODEL = process.env.VISION_MODEL || 'gpt-4o-mini';
 const logger = pino({ level: LOG_LEVEL });
 
 if (!/^\d{7,16}$/.test(OWNER_NUMBER)) {
@@ -17,6 +20,39 @@ if (!/^\d{7,16}$/.test(OWNER_NUMBER)) {
 
 // The full flag dictionary is bundled into this one file; no data files are needed.
 const FLAGS = Object.freeze({"🇦🇼":"أروبا","🇦🇫":"أفغانستان","🇦🇴":"أنغولا","🇦🇮":"أنغويلا","🇦🇽":"جزر آلاند","🇦🇱":"ألبانيا","🇦🇩":"أندورا","🇦🇪":"الإمارات العربية المتحدة","🇦🇷":"الأرجنتين","🇦🇲":"أرمينيا","🇦🇸":"ساموا الأمريكية","🇦🇶":"أنتاركتيكا","🇹🇫":"الأقاليم الجنوبية الفرنسية","🇦🇬":"أنتيغوا وبربودا","🇦🇺":"أستراليا","🇦🇹":"النمسا","🇦🇿":"أذربيجان","🇧🇮":"بوروندي","🇧🇪":"بلجيكا","🇧🇯":"بنين","🇧🇶":"هولندا الكاريبية","🇧🇫":"بوركينا فاسو","🇧🇩":"بنغلاديش","🇧🇬":"بلغاريا","🇧🇭":"البحرين","🇧🇸":"جزر البهاما","🇧🇦":"البوسنة والهرسك","🇧🇱":"سان بارتليمي","🇧🇾":"بيلاروس","🇧🇿":"بليز","🇧🇲":"برمودا","🇧🇴":"بوليفيا","🇧🇷":"البرازيل","🇧🇧":"بربادوس","🇧🇳":"بروناي","🇧🇹":"بوتان","🇧🇻":"جزيرة بوفيه","🇧🇼":"بوتسوانا","🇨🇫":"جمهورية أفريقيا الوسطى","🇨🇦":"كندا","🇨🇨":"جزر كوكوس (كيلينغ)","🇨🇭":"سويسرا","🇨🇱":"تشيلي","🇨🇳":"الصين","🇨🇮":"ساحل العاج","🇨🇲":"الكاميرون","🇨🇩":"الكونغو - كينشاسا","🇨🇬":"الكونغو - برازافيل","🇨🇰":"جزر كوك","🇨🇴":"كولومبيا","🇰🇲":"جزر القمر","🇨🇻":"الرأس الأخضر","🇨🇷":"كوستاريكا","🇨🇺":"كوبا","🇨🇼":"كوراساو","🇨🇽":"جزيرة كريسماس","🇰🇾":"جزر كايمان","🇨🇾":"قبرص","🇨🇿":"التشيك","🇩🇪":"ألمانيا","🇩🇯":"جيبوتي","🇩🇲":"دومينيكا","🇩🇰":"الدانمرك","🇩🇴":"جمهورية الدومينيكان","🇩🇿":"الجزائر","🇪🇨":"الإكوادور","🇪🇬":"مصر","🇪🇷":"إريتريا","🇪🇭":"الصحراء الغربية","🇪🇸":"إسبانيا","🇪🇪":"إستونيا","🇪🇹":"إثيوبيا","🇫🇮":"فنلندا","🇫🇯":"فيجي","🇫🇰":"جزر فوكلاند","🇫🇷":"فرنسا","🇫🇴":"جزر فارو","🇫🇲":"ميكرونيزيا","🇬🇦":"الغابون","🇬🇧":"المملكة المتحدة","🇬🇪":"جورجيا","🇬🇬":"غيرنزي","🇬🇭":"غانا","🇬🇮":"جبل طارق","🇬🇳":"غينيا","🇬🇵":"غوادلوب","🇬🇲":"غامبيا","🇬🇼":"غينيا بيساو","🇬🇶":"غينيا الاستوائية","🇬🇷":"اليونان","🇬🇩":"غرينادا","🇬🇱":"غرينلاند","🇬🇹":"غواتيمالا","🇬🇫":"غويانا الفرنسية","🇬🇺":"غوام","🇬🇾":"غيانا","🇭🇰":"هونغ كونغ الصينية (منطقة إدارية خاصة)","🇭🇲":"جزيرة هيرد وجزر ماكدونالد","🇭🇳":"هندوراس","🇭🇷":"كرواتيا","🇭🇹":"هايتي","🇭🇺":"هنغاريا","🇮🇩":"إندونيسيا","🇮🇲":"جزيرة مان","🇮🇳":"الهند","🇮🇴":"الإقليم البريطاني في المحيط الهندي","🇮🇪":"أيرلندا","🇮🇷":"إيران","🇮🇶":"العراق","🇮🇸":"آيسلندا","🇮🇱":"إسرائيل","🇮🇹":"إيطاليا","🇯🇲":"جامايكا","🇯🇪":"جيرسي","🇯🇴":"الأردن","🇯🇵":"اليابان","🇰🇿":"كازاخستان","🇰🇪":"كينيا","🇰🇬":"قيرغيزستان","🇰🇭":"كمبوديا","🇰🇮":"كيريباتي","🇰🇳":"سانت كيتس ونيفيس","🇰🇷":"كوريا الجنوبية","🇰🇼":"الكويت","🇱🇦":"لاوس","🇱🇧":"لبنان","🇱🇷":"ليبيريا","🇱🇾":"ليبيا","🇱🇨":"سانت لوسيا","🇱🇮":"ليختنشتاين","🇱🇰":"سريلانكا","🇱🇸":"ليسوتو","🇱🇹":"ليتوانيا","🇱🇺":"لوكسمبورغ","🇱🇻":"لاتفيا","🇲🇴":"منطقة ماكاو الإدارية الخاصة","🇲🇫":"سان مارتن","🇲🇦":"المغرب","🇲🇨":"موناكو","🇲🇩":"مولدوفا","🇲🇬":"مدغشقر","🇲🇻":"جزر المالديف","🇲🇽":"المكسيك","🇲🇭":"جزر مارشال","🇲🇰":"مقدونيا الشمالية","🇲🇱":"مالي","🇲🇹":"مالطا","🇲🇲":"ميانمار (بورما)","🇲🇪":"الجبل الأسود","🇲🇳":"منغوليا","🇲🇵":"جزر ماريانا الشمالية","🇲🇿":"موزمبيق","🇲🇷":"موريتانيا","🇲🇸":"مونتسرات","🇲🇶":"جزر المارتينيك","🇲🇺":"موريشيوس","🇲🇼":"ملاوي","🇲🇾":"ماليزيا","🇾🇹":"مايوت","🇳🇦":"ناميبيا","🇳🇨":"كاليدونيا الجديدة","🇳🇪":"النيجر","🇳🇫":"جزيرة نورفولك","🇳🇬":"نيجيريا","🇳🇮":"نيكاراغوا","🇳🇺":"نيوي","🇳🇱":"هولندا","🇳🇴":"النرويج","🇳🇵":"نيبال","🇳🇷":"ناورو","🇳🇿":"نيوزيلندا","🇴🇲":"عُمان","🇵🇰":"باكستان","🇵🇦":"بنما","🇵🇳":"جزر بيتكيرن","🇵🇪":"بيرو","🇵🇭":"الفلبين","🇵🇼":"بالاو","🇵🇬":"بابوا غينيا الجديدة","🇵🇱":"بولندا","🇵🇷":"بورتوريكو","🇰🇵":"كوريا الشمالية","🇵🇹":"البرتغال","🇵🇾":"باراغواي","🇵🇸":"الأراضي الفلسطينية","🇵🇫":"بولينيزيا الفرنسية","🇶🇦":"قطر","🇷🇪":"روينيون","🇷🇴":"رومانيا","🇷🇺":"روسيا","🇷🇼":"رواندا","🇸🇦":"المملكة العربية السعودية","🇸🇩":"السودان","🇸🇳":"السنغال","🇸🇬":"سنغافورة","🇬🇸":"جورجيا الجنوبية وجزر ساندويتش الجنوبية","🇸🇭":"سانت هيلينا","🇸🇯":"سفالبارد وجان ماين","🇸🇧":"جزر سليمان","🇸🇱":"سيراليون","🇸🇻":"السلفادور","🇸🇲":"سان مارينو","🇸🇴":"الصومال","🇵🇲":"سان بيير ومكويلون","🇷🇸":"صربيا","🇸🇸":"جنوب السودان","🇸🇹":"ساو تومي وبرينسيبي","🇸🇷":"سورينام","🇸🇰":"سلوفاكيا","🇸🇮":"سلوفينيا","🇸🇪":"السويد","🇸🇿":"إسواتيني","🇸🇽":"سانت مارتن","🇸🇨":"سيشل","🇸🇾":"سوريا","🇹🇨":"جزر توركس وكايكوس","🇹🇩":"تشاد","🇹🇬":"توغو","🇹🇭":"تايلاند","🇹🇯":"طاجيكستان","🇹🇰":"توكيلاو","🇹🇲":"تركمانستان","🇹🇱":"تيمور - ليشتي","🇹🇴":"تونغا","🇹🇹":"ترينيداد وتوباغو","🇹🇳":"تونس","🇹🇷":"تركيا","🇹🇻":"توفالو","🇹🇼":"تايوان","🇹🇿":"تنزانيا","🇺🇬":"أوغندا","🇺🇦":"أوكرانيا","🇺🇲":"جزر الولايات المتحدة النائية","🇺🇾":"أورغواي","🇺🇸":"الولايات المتحدة","🇺🇿":"أوزبكستان","🇻🇦":"الفاتيكان","🇻🇨":"سانت فنسنت وجزر غرينادين","🇻🇪":"فنزويلا","🇻🇬":"جزر فيرجن البريطانية","🇻🇮":"جزر فيرجن الأمريكية","🇻🇳":"فيتنام","🇻🇺":"فانواتو","🇼🇫":"جزر والس وفوتونا","🇼🇸":"ساموا","🇾🇪":"اليمن","🇿🇦":"جنوب أفريقيا","🇿🇲":"زامبيا","🇿🇼":"زيمبابوي","🇽🇰":"كوسوفو"});
+
+// Emoji rounds are answered automatically in every enabled group.
+const FRUITS = Object.freeze({
+  '🍎':'تفاحة','🍏':'تفاحة خضراء','🍐':'كمثرى','🍊':'برتقالة','🍋':'ليمونة',
+  '🍌':'موزة','🍉':'بطيخ','🍇':'عنب','🍓':'فراولة','🫐':'توت أزرق',
+  '🍈':'شمام','🍒':'كرز','🍑':'خوخ','🥭':'مانجو','🍍':'أناناس',
+  '🥥':'جوز الهند','🥝':'كيوي','🍅':'طماطم','🥑':'أفوكادو'
+});
+
+const VEGETABLES = Object.freeze({
+  '🥒':'خيار','🥦':'بروكلي','🥬':'خس','🥗':'سلطة خضراء',
+  '🥕':'جزر','🌽':'ذرة','🥔':'بطاطا','🍠':'بطاطا حلوة',
+  '🍆':'باذنجان','🧄':'ثوم','🧅':'بصل','🫚':'زنجبيل',
+  '🫛':'بازلاء','🫑':'فلفل حلو','🌶️':'فلفل حار','🌶':'فلفل حار',
+  '🥜':'فول سوداني','🌰':'كستناء','🍄':'فطر','🍄‍🟫':'فطر بني',
+  '🫒':'زيتون','🥥':'جوز الهند','🍅':'طماطم',
+  '🍥':'كعكة سمك','🫕':'فوندو'
+});
+
+const ANIMALS = Object.freeze({
+  '🐶':'كلب','🐕':'كلب','🐩':'كلب','🐺':'ذئب','🦊':'ثعلب','🐱':'قط','🐈':'قطة',
+  '🦁':'أسد','🐯':'نمر','🐅':'ببر','🐆':'فهد','🐴':'حصان','🦄':'حصان وحيد القرن',
+  '🐮':'بقرة','🐄':'بقرة','🐷':'خنزير','🐖':'خنزير','🐸':'ضفدع','🐵':'قرد',
+  '🐒':'قرد','🐔':'دجاجة','🐓':'ديك','🐣':'كتكوت','🐤':'كتكوت','🐧':'بطريق',
+  '🦆':'بطة','🦅':'نسر','🦉':'بومة','🦇':'خفاش','🐻':'دب','🐼':'باندا',
+  '🐨':'كوالا','🐯':'نمر','🐰':'أرنب','🐹':'هامستر','🐭':'فأر','🐍':'أفعى',
+  '🐢':'سلحفاة','🐊':'تمساح','🦖':'ديناصور','🦕':'ديناصور','🐬':'دلفين',
+  '🐳':'حوت','🐋':'حوت','🦈':'قرش','🐙':'أخطبوط','🦀':'سلطعون','🦐':'روبيان',
+  '🦋':'فراشة','🐝':'نحلة','🐞':'دعسوقة','🐜':'نملة','🕷':'عنكبوت','🐪':'جمل',
+  '🐫':'جمل','🦒':'زرافة','🐘':'فيل','🦏':'وحيد القرن','🦛':'فرس النهر',
+  '🦓':'حمار وحشي','🦍':'غوريلا','🦧':'إنسان الغاب','🐑':'خروف','🐐':'ماعز',
+  '🐏':'كبش','🦌':'غزال','🐎':'حصان','🦃':'ديك رومي','🦜':'ببغاء','🦚':'طاووس'
+});
 
 const MODES = new Set(['writing', 'breaking', 'reverse', 'flags']);
 const MODE_LABELS = Object.freeze({ writing: 'الكتابة', breaking: 'التفكيك', reverse: 'العكس', flags: 'الأعلام' });
@@ -154,45 +190,101 @@ function parseContestText(rawText) {
   return inner.length > 0 ? inner : null;
 }
 
-function normalizeFlag(value) {
-  // Normalize variation selectors and invisible spacing differences in emoji flags.
-  return String(value).replace(/[\uFE0E\uFE0F\u200D\u2060\u00A0\s]/gu, '');
-}
-
-const NORMALIZED_FLAGS = new Map(
-  Object.entries(FLAGS).map(([flag, country]) => [normalizeFlag(flag), country])
-);
-
-function randomBreakingText(value) {
-  const parts = graphemes(value);
-  if (parts.length <= 1) return value;
-  // Vary separators independently so every challenge has a slightly different look.
-  const separators = [' ', ' ', '  ', '   ', '. ', '. ', '.  ', '.   '];
-  let result = parts[0];
-  for (let i = 1; i < parts.length; i += 1) {
-    result += separators[Math.floor(Math.random() * separators.length)] + parts[i];
-  }
-  return result;
-}
-
 function transformText(mode, rawText) {
-  // Flags are sent as a standalone emoji (for example: 🇮🇶), not wrapped in asterisks.
-  // Keep optional *🇮🇶* compatibility, but accept the plain flag as the normal format.
-  if (mode === 'flags') {
-    const candidate = String(rawText ?? '').trim();
-    const flagText = candidate.startsWith('*') && candidate.endsWith('*')
-      ? candidate.slice(1, -1).trim()
-      : candidate;
-    return NORMALIZED_FLAGS.get(normalizeFlag(flagText)) ?? null;
-  }
-
   const inner = parseContestText(rawText);
   if (inner === null) return null;
   switch (mode) {
     case 'writing': return inner;
-    case 'breaking': return randomBreakingText(inner);
+    case 'breaking': return graphemes(inner).join(' ');
     case 'reverse': return graphemes(inner).reverse().join('');
+    case 'flags': return FLAGS[inner] ?? null;
     default: return null;
+  }
+}
+
+function unwrapMessageContent(message) {
+  let content = message?.message;
+  for (let i = 0; i < 8 && content; i += 1) {
+    const wrapped = content.ephemeralMessage?.message
+      ?? content.viewOnceMessage?.message
+      ?? content.viewOnceMessageV2?.message
+      ?? content.viewOnceMessageV2Extension?.message
+      ?? content.documentWithCaptionMessage?.message
+      ?? content.deviceSentMessage?.message;
+    if (!wrapped) break;
+    content = wrapped;
+  }
+  return content || {};
+}
+
+function normalizeEmoji(value) {
+  return String(value || '').trim().replace(/\uFE0F/g, '');
+}
+
+function getQuickAnswer(rawText) {
+  const value = normalizeEmoji(rawText);
+  if (!value) return null;
+  if (FLAGS[value]) return FLAGS[value];
+  if (FRUITS[value]) return FRUITS[value];
+  if (VEGETABLES[value]) return VEGETABLES[value];
+  if (ANIMALS[value]) return ANIMALS[value];
+  return null;
+}
+
+function responseDelay(text) {
+  // Keep replies quick; longer prompts get only a small additional pause.
+  const length = graphemes(String(text || '')).length;
+  return Math.min(420, 55 + Math.max(0, length - 8) * 5);
+}
+
+async function identifyAnimeCharacter(sock, message) {
+  if (!OPENAI_API_KEY) return null;
+  const content = unwrapMessageContent(message);
+  const imageMessage = content.imageMessage;
+  if (!imageMessage) return null;
+  try {
+    const buffer = await downloadMediaMessage(message, 'buffer', {}, {
+      logger,
+      reuploadRequest: sock.updateMediaMessage
+    });
+    if (!buffer?.length || buffer.length > 8 * 1024 * 1024) return null;
+    const mime = imageMessage.mimetype || 'image/jpeg';
+    if (!mime.startsWith('image/')) return null;
+    const base64 = buffer.toString('base64');
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      signal: AbortSignal.timeout(14000),
+      body: JSON.stringify({
+        model: VISION_MODEL,
+        temperature: 0,
+        max_tokens: 90,
+        response_format: { type: 'json_object' },
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Identify the anime character shown in this image. Return JSON only: {"name":"character name in Arabic if confidently known, otherwise null"}. Do not guess if uncertain. If this is not an anime character, return null.' },
+            { type: 'image_url', image_url: { url: `data:${mime};base64,${base64}`, detail: 'low' } }
+          ]
+        }]
+      })
+    });
+    if (!response.ok) {
+      logger.warn({ statusCode: response.status }, 'Anime image recognition request failed');
+      return null;
+    }
+    const data = await response.json();
+    const answer = data?.choices?.[0]?.message?.content;
+    if (typeof answer !== 'string') return null;
+    const parsed = JSON.parse(answer);
+    const name = typeof parsed?.name === 'string' ? parsed.name.trim() : '';
+    return name && name.length <= 80 && name.toLowerCase() !== 'null' ? name : null;
+  } catch (error) {
+    logger.warn({ name: error?.name || 'Error' }, 'Anime image recognition failed');
+    return null;
   }
 }
 
@@ -225,39 +317,58 @@ async function handleIncomingMessage(sock, message) {
   if (typeof jid !== 'string' || !jid.endsWith('@g.us')) return;
 
   const rawText = extractText(message.message);
-  if (rawText === null) return;
-  const commandText = rawText.trim();
+  const commandText = typeof rawText === 'string' ? rawText.trim() : '';
   const command = OWNER_COMMANDS.get(commandText);
 
-  // Owner controls are checked before checking whether the group is enabled.
+  // Owner commands are intentionally silent and never quoted.
   if (command && isOwnerMessage(message)) {
     const previous = getGroupState(jid);
     if (command.type === 'enable') {
       groupSettings.set(jid, { ...previous, enabled: true });
-      // Owner commands are intentionally silent: no confirmation message is sent.
       logger.info('A group was enabled by its owner');
     } else if (command.type === 'disable') {
       groupSettings.set(jid, { ...previous, enabled: false });
-      // Silent owner command.
       logger.info('A group was disabled by its owner');
     } else if (command.type === 'mode' && MODES.has(command.mode)) {
       groupSettings.set(jid, { ...previous, mode: command.mode });
-      // Silent owner command.
       logger.info({ mode: command.mode }, 'A group contest mode was changed');
     }
     return;
   }
 
-  // Do not echo secret-looking controls from regular members or our own text.
+  // Never answer the owner's own outgoing messages or expose command-like text.
   if (command || message.key?.fromMe === true) return;
 
   const state = getGroupState(jid);
-  if (!state.enabled || !state.mode) return;
+  if (!state.enabled) return;
 
+  // Flags, fruits and animals are recognized automatically in every enabled mode.
+  const quickAnswer = getQuickAnswer(rawText);
+  if (quickAnswer) {
+    await sleep(responseDelay(rawText));
+    await sock.sendMessage(jid, { text: quickAnswer });
+    return;
+  }
+
+  // Anime pictures are analyzed only when the host has an OpenAI API key configured.
+  const imageContent = unwrapMessageContent(message);
+  if (imageContent.imageMessage) {
+    // Do not hold up the contest queue while the vision service analyzes an image.
+    void identifyAnimeCharacter(sock, message).then(async characterName => {
+      if (characterName && getGroupState(jid).enabled) {
+        await sock.sendMessage(jid, { text: characterName });
+      }
+    }).catch(error => {
+      logger.warn({ name: error?.name || 'Error' }, 'Anime reply failed');
+    });
+    return;
+  }
+
+  if (!state.mode || state.mode === 'flags') return;
   const output = transformText(state.mode, rawText);
   if (typeof output !== 'string' || output.length === 0) return;
 
-  // Send as a normal standalone group message, never as a quoted reply.
+  await sleep(responseDelay(rawText));
   await sock.sendMessage(jid, { text: output });
 }
 
