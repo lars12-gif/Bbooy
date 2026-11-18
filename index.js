@@ -129,7 +129,7 @@ function scheduleReconnect(reason, delayMs) {
 
 function normalizePhoneJid(jid) {
   if (typeof jid !== 'string' || !jid.endsWith('@s.whatsapp.net')) return null;
-  const digits = jid.slice(0, '@s.whatsapp.net'.length * -1).split(':', 1)[0].replace(/\D/g, '');
+  const digits = jid.slice(0, -'@s.whatsapp.net'.length).split(':', 1)[0].replace(/\D/g, '');
   return /^\d{7,16}$/.test(digits) ? digits : null;
 }
 
@@ -193,6 +193,14 @@ function parseContestText(rawText) {
 function transformText(mode, rawText) {
   const inner = parseContestText(rawText);
   if (inner === null) return null;
+
+  // Ignore long text in writing, breaking and reverse modes.
+  // Only up to 3 words are accepted.
+  if (['writing', 'breaking', 'reverse'].includes(mode)) {
+    const wordCount = inner.trim().split(/\s+/u).filter(Boolean).length;
+    if (wordCount > 3) return null;
+  }
+
   switch (mode) {
     case 'writing': return inner;
     case 'breaking': {
@@ -219,13 +227,14 @@ function getQuickAnswer(rawText, mode) {
   return null;
 }
 
-// Longer questions and answers take proportionally more time.
+// Faster response timing: short answers are almost immediate.
+// Longer questions and answers take a little more time.
 function responseDelay(inputText, outputText) {
   const inputLength = graphemes(String(inputText || '')).length;
   const outputLength = graphemes(String(outputText || '')).length;
   const totalLength = inputLength + outputLength;
 
-  return Math.min(3500, 450 + totalLength * 65);
+  return Math.min(1200, 150 + totalLength * 20);
 }
 
 function getGroupState(jid) {
