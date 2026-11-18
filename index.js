@@ -154,14 +154,44 @@ function parseContestText(rawText) {
   return inner.length > 0 ? inner : null;
 }
 
+function normalizeFlag(value) {
+  // Normalize variation selectors and invisible spacing differences in emoji flags.
+  return String(value).replace(/[\uFE0E\uFE0F\u200D\u2060\u00A0\s]/gu, '');
+}
+
+const NORMALIZED_FLAGS = new Map(
+  Object.entries(FLAGS).map(([flag, country]) => [normalizeFlag(flag), country])
+);
+
+function randomBreakingText(value) {
+  const parts = graphemes(value);
+  if (parts.length <= 1) return value;
+  // Vary separators independently so every challenge has a slightly different look.
+  const separators = [' ', ' ', '  ', '   ', '. ', '. ', '.  ', '.   '];
+  let result = parts[0];
+  for (let i = 1; i < parts.length; i += 1) {
+    result += separators[Math.floor(Math.random() * separators.length)] + parts[i];
+  }
+  return result;
+}
+
 function transformText(mode, rawText) {
+  // Flags are sent as a standalone emoji (for example: 🇮🇶), not wrapped in asterisks.
+  // Keep optional *🇮🇶* compatibility, but accept the plain flag as the normal format.
+  if (mode === 'flags') {
+    const candidate = String(rawText ?? '').trim();
+    const flagText = candidate.startsWith('*') && candidate.endsWith('*')
+      ? candidate.slice(1, -1).trim()
+      : candidate;
+    return NORMALIZED_FLAGS.get(normalizeFlag(flagText)) ?? null;
+  }
+
   const inner = parseContestText(rawText);
   if (inner === null) return null;
   switch (mode) {
     case 'writing': return inner;
-    case 'breaking': return graphemes(inner).join(' ');
+    case 'breaking': return randomBreakingText(inner);
     case 'reverse': return graphemes(inner).reverse().join('');
-    case 'flags': return FLAGS[inner] ?? null;
     default: return null;
   }
 }
@@ -204,17 +234,15 @@ async function handleIncomingMessage(sock, message) {
     const previous = getGroupState(jid);
     if (command.type === 'enable') {
       groupSettings.set(jid, { ...previous, enabled: true });
-      await sock.sendMessage(jid, { text: previous.mode
-        ? '✅ تم تفعيل المسابقة بهذا القروب.'
-        : '✅ تم التفعيل. اختار الوضع أولاً بأحد الأوامر: *كتابة أو *تفكيك أو *عكس أو *أعلام.' }, { quoted: message });
+      // Owner commands are intentionally silent: no confirmation message is sent.
       logger.info('A group was enabled by its owner');
     } else if (command.type === 'disable') {
       groupSettings.set(jid, { ...previous, enabled: false });
-      await sock.sendMessage(jid, { text: '⛔ تم إيقاف المسابقة بهذا القروب.' }, { quoted: message });
+      // Silent owner command.
       logger.info('A group was disabled by its owner');
     } else if (command.type === 'mode' && MODES.has(command.mode)) {
       groupSettings.set(jid, { ...previous, mode: command.mode });
-      await sock.sendMessage(jid, { text: `✅ تم اختيار وضع ${MODE_LABELS[command.mode]}. ${previous.enabled ? 'الوضع جاهز.' : 'فعّل القروب بالأمر 💜طك.'}` }, { quoted: message });
+      // Silent owner command.
       logger.info({ mode: command.mode }, 'A group contest mode was changed');
     }
     return;
@@ -229,7 +257,8 @@ async function handleIncomingMessage(sock, message) {
   const output = transformText(state.mode, rawText);
   if (typeof output !== 'string' || output.length === 0) return;
 
-  await sock.sendMessage(jid, { text: output }, { quoted: message });
+  // Send as a normal standalone group message, never as a quoted reply.
+  await sock.sendMessage(jid, { text: output });
 }
 
 async function requestPairingCode(sock, generation) {
