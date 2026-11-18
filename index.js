@@ -129,7 +129,7 @@ function scheduleReconnect(reason, delayMs) {
 
 function normalizePhoneJid(jid) {
   if (typeof jid !== 'string' || !jid.endsWith('@s.whatsapp.net')) return null;
-  const digits = jid.slice(0, -'@s.whatsapp.net'.length).split(':', 1)[0].replace(/\D/g, '');
+  const digits = jid.slice(0, '@s.whatsapp.net'.length * -1).split(':', 1)[0].replace(/\D/g, '');
   return /^\d{7,16}$/.test(digits) ? digits : null;
 }
 
@@ -219,10 +219,13 @@ function getQuickAnswer(rawText, mode) {
   return null;
 }
 
-function responseDelay(text) {
-  // Keep replies quick; longer prompts get only a small additional pause.
-  const length = graphemes(String(text || '')).length;
-  return Math.min(420, 55 + Math.max(0, length - 8) * 5);
+// Longer questions and answers take proportionally more time.
+function responseDelay(inputText, outputText) {
+  const inputLength = graphemes(String(inputText || '')).length;
+  const outputLength = graphemes(String(outputText || '')).length;
+  const totalLength = inputLength + outputLength;
+
+  return Math.min(3500, 450 + totalLength * 65);
 }
 
 function getGroupState(jid) {
@@ -282,9 +285,9 @@ async function handleIncomingMessage(sock, message) {
   // Emoji answers are handled only by the matching selected activity.
   const quickAnswer = getQuickAnswer(rawText, state.mode);
   if (quickAnswer) {
-    await sleep(responseDelay(rawText));
+    await sleep(responseDelay(rawText, quickAnswer));
     await sock.sendMessage(jid, { text: quickAnswer });
-    await sleep(2000); // Two-second cooldown after every successful answer.
+    await sleep(3000);
     return;
   }
 
@@ -292,9 +295,9 @@ async function handleIncomingMessage(sock, message) {
   const output = transformText(state.mode, rawText);
   if (typeof output !== 'string' || output.length === 0) return;
 
-  await sleep(responseDelay(rawText));
+  await sleep(responseDelay(rawText, output));
   await sock.sendMessage(jid, { text: output });
-  await sleep(2000); // Two-second cooldown after every successful answer.
+  await sleep(3000);
 }
 
 async function requestPairingCode(sock, generation) {
@@ -386,6 +389,7 @@ async function startSocket() {
         scheduleReconnect(`connection-closed-${statusCode ?? 'unknown'}`, delay);
       }
     });
+
   } catch (error) {
     logger.error({ name: error?.name || 'Error' }, 'Could not start WhatsApp connection');
     scheduleReconnect('socket-start-failed');
