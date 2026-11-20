@@ -118,48 +118,41 @@ async function startBot() {
           content.extendedTextMessage?.text ||
           '';
 
-        // أوامر التحكم في المحادثة الشخصية فقط
-        if (!isGroup) {
+        
+// أوامر تحديد البيانات من الخاص أو أي قروب
+if (text.trim() === '!تحديد_جهة') {
+  waitingForContact = true;
+  waitingForMessage = false;
+  continue;
+}
 
-          if (jid !== `${OWNER_NUMBER}@s.whatsapp.net`) {
-            continue;
-          }
+if (text.trim() === '!تحديد_رسالة') {
+  waitingForMessage = true;
+  waitingForContact = false;
+  continue;
+}
 
-          if (text.trim() === '!تحديد_جهة') {
-            waitingForContact = true;
-            waitingForMessage = false;
-            continue;
-          }
+// استقبال بطاقة جهة الاتصال
+if (waitingForContact && content.contactMessage) {
+  const contact = content.contactMessage;
 
-          if (text.trim() === '!تحديد_رسالة') {
-            waitingForMessage = true;
-            waitingForContact = false;
-            continue;
-          }
+  savedContact = {
+    vcard: contact.vcard,
+    name: getContactName(contact),
+    phone: getContactPhone(contact.vcard)
+  };
 
-          // استقبال بطاقة جهة الاتصال
-          if (waitingForContact && content.contactMessage) {
-            const contact = content.contactMessage;
+  waitingForContact = false;
+  continue;
+}
 
-            savedContact = {
-              vcard: contact.vcard,
-              name: getContactName(contact),
-              phone: getContactPhone(contact.vcard)
-            };
+// استقبال رسالة الشرح
+if (waitingForMessage && text.trim()) {
+  savedMessage = text.trim();
+  waitingForMessage = false;
+  continue;
+}
 
-            waitingForContact = false;
-            continue;
-          }
-
-          // استقبال رسالة الشرح
-          if (waitingForMessage && text.trim()) {
-            savedMessage = text.trim();
-            waitingForMessage = false;
-            continue;
-          }
-
-          continue;
-        }
 
         // تنفيذ الأمر داخل القروب
         if (text.trim() !== '!نتح') continue;
