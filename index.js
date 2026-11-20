@@ -1,574 +1,230 @@
+
 import makeWASocket, {
   Browsers,
   DisconnectReason,
   initAuthCreds,
-  downloadMediaMessage
+  jidNormalizedUser
 } from '@whiskeysockets/baileys';
+
 import pino from 'pino';
 
-// Change OWNER_NUMBER only if the WhatsApp account linked to this bot changes.
-// You may also set OWNER_NUMBER in your hosting environment variables.
-const OWNER_NUMBER = String(process.env.OWNER_NUMBER || '15879975734').replace(/\D/g, '');
+const OWNER_NUMBER = String(
+  process.env.OWNER_NUMBER || '15879975734'
+).replace(/\D/g, '');
+
 const LOG_LEVEL = process.env.LOG_LEVEL || 'warn';
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
-const VISION_MODEL = process.env.VISION_MODEL || 'gpt-4o-mini';
 const logger = pino({ level: LOG_LEVEL });
 
 if (!/^\d{7,16}$/.test(OWNER_NUMBER)) {
   throw new Error('OWNER_NUMBER must include country code and digits only.');
 }
 
-// The full flag dictionary is bundled into this one file; no data files are needed.
-const FLAGS = Object.freeze({"🇦🇼":"أروبا","🇦🇫":"أفغانستان","🇦🇴":"أنغولا","🇦🇮":"أنغويلا","🇦🇽":"جزر آلاند","🇦🇱":"ألبانيا","🇦🇩":"أندورا","🇦🇪":"الإمارات ","🇦🇷":"الأرجنتين","🇦🇲":"أرمينيا","🇦🇸":"ساموا الأمريكية","🇦🇶":"أنتاركتيكا","🇹🇫":"  مدري","🇦🇬":"أنتيغوا","🇦🇺":"أستراليا","🇦🇹":"النمسا","🇦🇿":"أذربيجان","🇧🇮":"بوروندي","🇧🇪":"بلجيكا","🇧🇯":"بنين","🇧🇶":"هولندا الكاريبية","🇧🇫":"بوركينا","🇧🇩":"بنغلاديش","🇧🇬":"بلغاريا","🇧🇭":"البحرين","🇧🇸":"مدري","🇧🇦":"البوسنة","🇧🇱":"مدري ","🇧🇾":"بيلاروسيا","🇧🇿":"بليز","🇧🇲":"برمودا","🇧🇴":"بوليفيا","🇧🇷":"البرازيل","🇧🇧":"بربادوس","🇧🇳":"بروناي","🇧🇹":"بوتان","🇧🇻":" النرويج","🇧🇼":"بوتسوانا","🇨🇫":"  اورسطو","🇨🇦":"كندا","🇨🇨":"جزر الوقوق","🇨🇭":"سويسرا","🇨🇱":"تشيلي","🇨🇳":"الصين","🇨🇮":"ساحل العاج","🇨🇲":"الكاميرون","🇨🇩":"الكونغو","🇨🇬":"الكونغو","🇨🇰":"جزر المدري وشو","🇨🇴":"كولومبيا","🇰🇲":"جزر القمر","🇨🇻":"الرأس الأخضر","🇨🇷":"كوستاريكا","🇨🇺":"كوبا","🇨🇼":"كوراساو","🇨🇽":"جزيرة الزقوق","🇰🇾":"جزر مطي","🇨🇾":"قبرص","🇨🇿":"التشيك","🇩🇪":"ألمانيا","🇩🇯":"جيبوتي","🇩🇲":"دومينيكا","🇩🇰":"الدانمرك","🇩🇴":" الدومينيكان","🇩🇿":"الجزائر","🇪🇨":"الاكوادور","🇪🇬":"مصر","🇪🇷":"اريتريا","🇪🇭":"ممم","🇪🇸":"إسبانيا","🇪🇪":"إستونيا","🇪🇹":"إثيوبيا","🇫🇮":"فنلندا","🇫🇯":"فيجي","🇫🇰":"جزر فوكلاند","🇫🇷":"فرنسا","🇫🇴":"جزر فارو","🇫🇲":"ميكرونيزيا","🇬🇦":"الغابون","🇬🇧":"المملكة المتحدة","🇬🇪":"جورجيا","🇬🇬":"غيرنزي","🇬🇭":"غانا","🇬🇮":"جبل طارق","🇬🇳":"غينيا","🇬🇵":"غوادلوب","🇬🇲":"غامبيا","🇬🇼":"غينيا بيساو","🇬🇶":"غينيا الاستوائية","🇬🇷":"اليونان","🇬🇩":"غرينادا","🇬🇱":"غرينلاند","🇬🇹":"غواتيمالا","🇬🇫":"غويانا الفرنسية","🇬🇺":"غوام","🇬🇾":"غيانا","🇭🇰":"هونغ كونغ الصينية (منطقة إدارية خاصة)","🇭🇲":"جزيرة هيرد وجزر ماكدونالد","🇭🇳":"هندوراس","🇭🇷":"كرواتيا","🇭🇹":"هايتي","🇭🇺":"هنغاريا","🇮🇩":"إندونيسيا","🇮🇲":"جزيرة مان","🇮🇳":"الهند","🇮🇴":"الإقليم البريطاني في المحيط الهندي","🇮🇪":"أيرلندا","🇮🇷":"إيران","🇮🇶":"العراق","🇮🇸":"آيسلندا","🇮🇱":"إسرائيل","🇮🇹":"إيطاليا","🇯🇲":"جامايكا","🇯🇪":"جيرسي","🇯🇴":"الأردن","🇯🇵":"اليابان","🇰🇿":"كازاخستان","🇰🇪":"كينيا","🇰🇬":"قيرغيزستان","🇰🇭":"كمبوديا","🇰🇮":"كيريباتي","🇰🇳":"سانت كيتس ونيفيس","🇰🇷":"كوريا الجنوبية","🇰🇼":"الكويت","🇱🇦":"لاوس","🇱🇧":"لبنان","🇱🇷":"ليبيريا","🇱🇾":"ليبيا","🇱🇨":"سانت لوسيا","🇱🇮":"ليختنشتاين","🇱🇰":"سريلانكا","🇱🇸":"ليسوتو","🇱🇹":"ليتوانيا","🇱🇺":"لوكسمبورغ","🇱🇻":"لاتفيا","🇲🇴":"منطقة ماكاو الإدارية الخاصة","🇲🇫":"سان مارتن","🇲🇦":"المغرب","🇲🇨":"موناكو","🇲🇩":"مولدوفا","🇲🇬":"مدغشقر","🇲🇻":"جزر المالديف","🇲🇽":"المكسيك","🇲🇭":"جزر مارشال","🇲🇰":"مقدونيا الشمالية","🇲🇱":"مالي","🇲🇹":"مالطا","🇲🇲":"ميانمار (بورما)","🇲🇪":"الجبل الأسود","🇲🇳":"منغوليا","🇲🇵":"جزر ماريانا الشمالية","🇲🇿":"موزمبيق","🇲🇷":"موريتانيا","🇲🇸":"مونتسرات","🇲🇶":"جزر المارتينيك","🇲🇺":"موريشيوس","🇲🇼":"ملاوي","🇲🇾":"ماليزيا","🇾🇹":"مايوت","🇳🇦":"ناميبيا","🇳🇨":"كاليدونيا الجديدة","🇳🇪":"النيجر","🇳🇫":"جزيرة نورفولك","🇳🇬":"نيجيريا","🇳🇮":"نيكاراغوا","🇳🇺":"نيوي","🇳🇱":"هولندا","🇳🇴":"النرويج","🇳🇵":"نيبال","🇳🇷":"ناورو","🇳🇿":"نيوزيلندا","🇴🇲":"عُمان","🇵🇰":"باكستان","🇵🇦":"بنما","🇵🇳":"جزر بيتكيرن","🇵🇪":"بيرو","🇵🇭":"الفلبين","🇵🇼":"بالاو","🇵🇬":"بابوا غينيا الجديدة","🇵🇱":"بولندا","🇵🇷":"بورتوريكو","🇰🇵":"كوريا الشمالية","🇵🇹":"البرتغال","🇵🇾":"باراغواي","🇵🇸":"الأراضي الفلسطينية","🇵🇫":"بولينيزيا الفرنسية","🇶🇦":"قطر","🇷🇪":"روينيون","🇷🇴":"رومانيا","🇷🇺":"روسيا","🇷🇼":"رواندا","🇸🇦":"المملكة العربية السعودية","🇸🇩":"السودان","🇸🇳":"السنغال","🇸🇬":"سنغافورة","🇬🇸":"جورجيا الجنوبية وجزر ساندويتش الجنوبية","🇸🇭":"سانت هيلينا","🇸🇯":"سفالبارد وجان ماين","🇸🇧":"جزر سليمان","🇸🇱":"سيراليون","🇸🇻":"السلفادور","🇸🇲":"سان مارينو","🇸🇴":"الصومال","🇵🇲":"سان بيير ومكويلون","🇷🇸":"صربيا","🇸🇸":"جنوب السودان","🇸🇹":"ساو تومي وبرينسيبي","🇸🇷":"سورينام","🇸🇰":"سلوفاكيا","🇸🇮":"سلوفينيا","🇸🇪":"السويد","🇸🇿":"إسواتيني","🇸🇽":"سانت مارتن","🇸🇨":"سيشل","🇸🇾":"سوريا","🇹🇨":"جزر توركس وكايكوس","🇹🇩":"تشاد","🇹🇬":"توغو","🇹🇭":"تايلاند","🇹🇯":"طاجيكستان","🇹🇰":"توكيلاو","🇹🇲":"تركمانستان","🇹🇱":"تيمور - ليشتي","🇹🇴":"تونغا","🇹🇹":"ترينيداد وتوباغو","🇹🇳":"تونس","🇹🇷":"تركيا","🇹🇻":"توفالو","🇹🇼":"تايوان","🇹🇿":"تنزانيا","🇺🇬":"أوغندا","🇺🇦":"أوكرانيا","🇺🇲":"جزر الولايات المتحدة النائية","🇺🇾":"أورغواي","🇺🇸":"الولايات المتحدة","🇺🇿":"أوزبكستان","🇻🇦":"الفاتيكان","🇻🇨":"سانت فنسنت وجزر غرينادين","🇻🇪":"فنزويلا","🇻🇬":"جزر فيرجن البريطانية","🇻🇮":"جزر فيرجن الأمريكية","🇻🇳":"فيتنام","🇻🇺":"فانواتو","🇼🇫":"جزر والس وفوتونا","🇼🇸":"ساموا","🇾🇪":"اليمن","🇿🇦":"جنوب أفريقيا","🇿🇲":"زامبيا","🇿🇼":"زيمبابوي","🇽🇰":"كوسوفو"});
+// بيانات مؤقتة في الذاكرة
+let savedContact = null;
+let savedMessage = null;
 
-// Emoji rounds are answered automatically in every enabled group.
-const FRUITS = Object.freeze({
-  '🍎':'تفاحة','🍏':'تفاحة خضراء','🍐':'كمثرى','🍊':'برتقالة','🍋':'ليمونة',
-  '🍌':'موزة','🍉':'بطيخ','🍇':'عنب','🍓':'فراولة','🫐':'توت أزرق',
-  '🍈':'شمام','🍒':'كرز','🍑':'خوخ','🥭':'مانجو','🍍':'أناناس',
-  '🥥':'جوز الهند','🥝':'كيوي','🍅':'طماطم','🥑':'أفوكادو'
-});
+let waitingForContact = false;
+let waitingForMessage = false;
 
-const VEGETABLES = Object.freeze({
-  '🥒':'خيار','🥦':'بروكلي','🥬':'خس','🥗':'سلطة خضراء',
-  '🥕':'جزر','🌽':'ذرة','🥔':'بطاطا','🍠':'بطاطا حلوة',
-  '🍆':'باذنجان','🧄':'ثوم','🧅':'بصل','🫚':'زنجبيل',
-  '🫛':'بازلاء','🫑':'فلفل حلو','🌶️':'فلفل حار','🌶':'فلفل حار',
-  '🥜':'فول سوداني','🌰':'كستناء','🍄':'فطر','🍄‍🟫':'فطر بني',
-  '🫒':'زيتون','🥥':'جوز الهند','🍅':'طماطم',
-  '🍥':'كعكة سمك','🫕':'فوندو'
-});
+const sleep = ms =>
+  new Promise(resolve => setTimeout(resolve, ms));
 
-const ANIMALS = Object.freeze({
-  '🐶':'كلب','🐕':'كلب','🐩':'كلب','🐺':'ذئب','🦊':'ثعلب','🐱':'قط','🐈':'قطة',
-  '🦁':'أسد','🐯':'نمر','🐅':'ببر','🐆':'فهد','🐴':'حصان','🦄':'حصان وحيد القرن',
-  '🐮':'بقرة','🐄':'بقرة','🐷':'خنزير','🐖':'خنزير','🐸':'ضفدع','🐵':'قرد',
-  '🐒':'قرد','🐔':'دجاجة','🐓':'ديك','🐣':'كتكوت','🐤':'كتكوت','🐧':'بطريق',
-  '🦆':'بطة','🦅':'نسر','🦉':'بومة','🦇':'خفاش','🐻':'دب','🐼':'باندا',
-  '🐨':'كوالا','🐯':'نمر','🐰':'أرنب','🐹':'هامستر','🐭':'فأر','🐍':'أفعى',
-  '🐢':'سلحفاة','🐊':'تمساح','🦖':'ديناصور','🦕':'ديناصور','🐬':'دلفين',
-  '🐳':'حوت','🐋':'حوت','🦈':'قرش','🐙':'أخطبوط','🦀':'سلطعون','🦐':'روبيان',
-  '🦋':'فراشة','🐝':'نحلة','🐞':'دعسوقة','🐜':'نملة','🕷':'عنكبوت','🐪':'جمل',
-  '🐫':'جمل','🦒':'زرافة','🐘':'فيل','🦏':'وحيد القرن','🦛':'فرس النهر',
-  '🦓':'حمار وحشي','🦍':'غوريلا','🦧':'إنسان الغاب','🐑':'خروف','🐐':'ماعز',
-  '🐏':'كبش','🦌':'غزال','🐎':'حصان','🦃':'ديك رومي','🦜':'ببغاء','🦚':'طاووس'
-});
+function getPhoneFromContact(contact) {
+  const phone =
+    contact?.vcard?.match(/TEL[^:]*:([+\d\s().-]+)/i)?.[1] ||
+    contact?.vcard?.match(/TEL[^:]*:(.*)/i)?.[1];
 
-const MODES = new Set(['writing', 'breaking', 'reverse', 'flags', 'fruits', 'animals']);
-const MODE_LABELS = Object.freeze({
-  writing: 'الكتابة', breaking: 'التفكيك', reverse: 'العكس',
-  flags: 'الأعلام', fruits: 'الفواكه', animals: 'الحيوانات'
-});
-const OWNER_COMMANDS = new Map([
-  // أوامر التشغيل السرية
-  ['طيب...', { type: 'enable' }],
-  ['وتفك...', { type: 'enable' }],
-  ['ـبيو', { type: 'enable' }],
-  // أوامر الإيقاف السرية
-  ['...طيب', { type: 'disable' }],
-  ['...وتفك', { type: 'disable' }],
-  ['ـويب', { type: 'disable' }],
-  // أوامر اختيار نوع المسابقة
-  ['ٕكتابة', { type: 'mode', mode: 'writing' }],
-  ['ٕتفكيك', { type: 'mode', mode: 'breaking' }],
-  ['ٕعكس', { type: 'mode', mode: 'reverse' }],
-  ['ٕأعلام', { type: 'mode', mode: 'flags' }],
-  ['ٕفواكه', { type: 'mode', mode: 'fruits' }],
-  ['ٕحيوانات', { type: 'mode', mode: 'animals' }]
-]);
+  return phone ? phone.replace(/\D/g, '') : null;
+}
 
-// Only live group settings are kept in RAM. Nothing is written to disk.
-const groupSettings = new Map();
-const seenMessages = new Map();
-const SEEN_TTL_MS = 5 * 60 * 1000;
-const SEEN_LIMIT = 12000;
+function getContactName(contact) {
+  const match = contact?.vcard?.match(/FN[^:]*:(.*)/i);
+  return match?.[1]?.trim() || 'جهة اتصال';
+}
 
-// Keep the WhatsApp authentication credentials and Signal keys in RAM only.
-// This avoids auth-file storms/EMFILE. Restarting Node means pairing again.
-function createMemoryAuthState() {
-  const signalKeys = new Map();
-  const keys = {
-    async get(type, ids) {
-      const result = {};
-      for (const id of ids) {
-        const value = signalKeys.get(`${type}:${id}`);
-        if (value !== undefined) result[id] = value;
+async function startBot() {
+  // استبدل هذا الجزء بآلية المصادقة الموجودة في مشروعك
+  // إذا كان لديك نظام حفظ جلسة جاهز، احتفظ به كما هو.
+
+  const { state, saveCreds } =
+    await (await import('@whiskeysockets/baileys'))
+      .useMultiFileAuthState('./auth_info');
+
+  const sock = makeWASocket({
+    auth: state,
+    logger,
+    browser: Browsers.ubuntu('Chrome'),
+    printQRInTerminal: true
+  });
+
+  sock.ev.on('creds.update', saveCreds);
+
+  sock.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
+    if (connection === 'close') {
+      const code = lastDisconnect?.error?.output?.statusCode;
+
+      if (code !== DisconnectReason.loggedOut) {
+        startBot();
       }
-      return result;
-    },
-    async set(data) {
-      for (const [type, entries] of Object.entries(data || {})) {
-        for (const [id, value] of Object.entries(entries || {})) {
-          const key = `${type}:${id}`;
-          if (value === null || value === undefined) signalKeys.delete(key);
-          else signalKeys.set(key, value);
+    }
+
+    if (connection === 'open') {
+      console.log('Bot connected successfully.');
+    }
+  });
+
+  sock.ev.on('messages.upsert', async ({ messages }) => {
+    for (const msg of messages) {
+      try {
+        if (!msg.message || msg.key.fromMe === false && msg.key.participant) {
+          // تجاهل الرسائل المقتبسة أو غير الصادرة من المالك عند الحاجة
         }
-      }
-    }
-  };
-  return { creds: initAuthCreds(), keys };
-}
 
-let authState = createMemoryAuthState();
-let currentSocket = null;
-let reconnectTimer = null;
-let reconnectAttempt = 0;
-let socketGeneration = 0;
-let startupInProgress = false;
-let shuttingDown = false;
-let pairingRequestedGeneration = -1;
-let messageQueue = Promise.resolve();
+        const jid = msg.key.remoteJid;
+        const isGroup = jid?.endsWith('@g.us');
 
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-const getStatusCode = error => error?.output?.statusCode ?? error?.statusCode ?? null;
+        const sender = isGroup
+          ? msg.key.participant
+          : jid;
 
-function reconnectDelay() {
-  const base = Math.min(60000, 1500 * (2 ** Math.min(reconnectAttempt, 6)));
-  reconnectAttempt += 1;
-  return base + Math.floor(Math.random() * Math.min(900, base * 0.15));
-}
+        const senderNumber = (sender || '')
+          .split('@')[0]
+          .replace(/\D/g, '');
 
-function scheduleReconnect(reason, delayMs) {
-  if (shuttingDown || reconnectTimer) return;
-  const delay = Number.isFinite(delayMs) ? delayMs : reconnectDelay();
-  logger.warn({ reason, retryInMs: delay }, 'WhatsApp reconnect scheduled');
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null;
-    void startSocket();
-  }, delay);
-  // Do not unref this timer: after a 515 close it may be the only live handle.
-}
+        if (senderNumber !== OWNER_NUMBER) continue;
 
-function normalizePhoneJid(jid) {
-  if (typeof jid !== 'string' || !jid.endsWith('@s.whatsapp.net')) return null;
-  const digits = jid.slice(0, -'@s.whatsapp.net'.length).split(':', 1)[0].replace(/\D/g, '');
-  return /^\d{7,16}$/.test(digits) ? digits : null;
-}
+        const content = msg.message;
+        const text =
+          content.conversation ||
+          content.extendedTextMessage?.text ||
+          '';
 
-function isOwnerMessage(message) {
-  // The socket is paired using OWNER_NUMBER, so an outgoing group message
-  // (fromMe=true) is authored by that linked WhatsApp account. This also
-  // handles LID-mode messages where participant may not contain a phone JID.
-  if (message?.key?.fromMe === true) return true;
+        // لا نستقبل أوامر التحكم إلا من محادثة المالك مع نفسه
+        const isPrivate = !isGroup;
 
-  const key = message?.key || {};
-  const candidates = [key.participantAlt, key.participant, message?.participantAlt, message?.participant];
-  return candidates.some(jid => normalizePhoneJid(jid) === OWNER_NUMBER);
-}
+        if (isPrivate) {
+          if (text === '!تحديد_جهة') {
+            waitingForContact = true;
+            waitingForMessage = false;
+            continue;
+          }
 
-function extractText(message) {
-  if (!message || typeof message !== 'object') return null;
-  let content = message;
-  for (let i = 0; i < 8; i += 1) {
-    const wrapped = content.ephemeralMessage?.message
-      ?? content.viewOnceMessage?.message
-      ?? content.viewOnceMessageV2?.message
-      ?? content.viewOnceMessageV2Extension?.message
-      ?? content.documentWithCaptionMessage?.message
-      ?? content.deviceSentMessage?.message
-      ?? content.editedMessage?.message;
-    if (!wrapped) break;
-    content = wrapped;
-  }
+          if (text === '!تحديد_رسالة') {
+            waitingForMessage = true;
+            waitingForContact = false;
+            continue;
+          }
 
-  const candidates = [
-    content.conversation,
-    content.extendedTextMessage?.text,
-    content.imageMessage?.caption,
-    content.videoMessage?.caption,
-    content.documentMessage?.caption,
-    content.buttonsResponseMessage?.selectedDisplayText,
-    content.buttonsResponseMessage?.selectedButtonId,
-    content.listResponseMessage?.title,
-    content.listResponseMessage?.singleSelectReply?.selectedRowId,
-    content.templateButtonReplyMessage?.selectedDisplayText,
-    content.templateButtonReplyMessage?.selectedId
-  ];
-  return candidates.find(value => typeof value === 'string') ?? null;
-}
+          if (waitingForContact && content.contactMessage) {
+            savedContact = {
+              message: content.contactMessage,
+              name: content.contactMessage.displayName || 'جهة اتصال',
+              phone: getPhoneFromContact(content.contactMessage)
+            };
 
-function graphemes(text) {
-  if (typeof Intl.Segmenter === 'function') {
-    const segmenter = new Intl.Segmenter('und', { granularity: 'grapheme' });
-    return Array.from(segmenter.segment(text), part => part.segment);
-  }
-  return Array.from(text);
-}
+            waitingForContact = false;
+            continue;
+          }
 
-function parseContestText(rawText) {
-  if (typeof rawText !== 'string' || rawText.length < 3) return null;
-  if (rawText[0] !== '*' || rawText.at(-1) !== '*') return null;
-  const inner = rawText.slice(1, -1);
-  return inner.length > 0 ? inner : null;
-}
+          if (waitingForMessage && text.trim()) {
+            savedMessage = text.trim();
+            waitingForMessage = false;
+            continue;
+          }
 
-function transformText(mode, rawText) {
-  const inner = parseContestText(rawText);
-  if (inner === null) return null;
+          continue;
+        }
 
-  // Keep the original three-word limit for text modes only.
-  if (['writing', 'breaking', 'reverse'].includes(mode)) {
-    const wordCount = inner.trim().split(/\s+/u).filter(Boolean).length;
-    if (wordCount > 3) return null;
-  }
+        // تنفيذ الأمر داخل المجموعة
+        if (text.trim() !== '!نتح') continue;
 
-  switch (mode) {
-    case 'writing': return inner;
-    case 'breaking': return formatBrokenText(inner);
-    case 'reverse': return graphemes(inner).reverse().join('');
-    case 'flags': return FLAGS[inner] ?? null;
-    default: return null;
-  }
-}
-
-function unwrapMessageContent(message) {
-  let content = message?.message;
-  for (let i = 0; i < 8 && content; i += 1) {
-    const wrapped = content.ephemeralMessage?.message
-      ?? content.viewOnceMessage?.message
-      ?? content.viewOnceMessageV2?.message
-      ?? content.viewOnceMessageV2Extension?.message
-      ?? content.documentWithCaptionMessage?.message
-      ?? content.deviceSentMessage?.message;
-    if (!wrapped) break;
-    content = wrapped;
-  }
-  return content || {};
-}
-
-function normalizeEmoji(value) {
-  return String(value || '').trim().replace(/\uFE0F/g, '');
-}
-
-function getQuickAnswer(rawText) {
-  const value = normalizeEmoji(rawText);
-  if (!value) return null;
-  if (FLAGS[value]) return FLAGS[value];
-  if (FRUITS[value]) return FRUITS[value];
-  if (VEGETABLES[value]) return VEGETABLES[value];
-  if (ANIMALS[value]) return ANIMALS[value];
-  return null;
-}
-
-function formatBrokenText(value, mergePairAt = -1) {
-  const letters = graphemes(String(value || '').replace(/\s+/gu, ''));
-  const parts = [];
-
-  for (let i = 0; i < letters.length; i += 1) {
-    parts.push(letters[i]);
-    if (i === letters.length - 1) continue;
-
-    // A rare first-pass mistake can leave two neighboring letters together.
-    if (i === mergePairAt) continue;
-
-    // Vary spaces and occasional dots to make the breakdown feel less robotic.
-    const separatorRoll = Math.random();
-    parts.push(separatorRoll < 0.20 ? '. ' : ' ');
-  }
-
-  return parts.join('');
-}
-
-function makeBreakingAttempts(value) {
-  const letters = graphemes(String(value || '').replace(/\s+/gu, ''));
-  const correct = formatBrokenText(value);
-  if (letters.length < 2 || Math.random() >= 0.05) {
-    return { first: correct, correction: null };
-  }
-
-  // Only one small joining mistake, then a corrected attempt.
-  const mergeAt = Math.floor(Math.random() * (letters.length - 1));
-  return {
-    first: formatBrokenText(value, mergeAt),
-    correction: correct
-  };
-}
-
-function responseDelay(inputText, outputText = '') {
-  // Deliberately slower: the pause grows with both the prompt and the answer.
-  const inputLength = graphemes(String(inputText || '')).length;
-  const outputLength = graphemes(String(outputText || '')).length;
-  const totalLength = inputLength + outputLength;
-  return Math.min(10000, 1200 + totalLength * 95);
-}
-
-// Minimum pause between successful answers in the shared message queue.
-const ANSWER_COOLDOWN_MS = 3000;
-
-async function identifyAnimeCharacter(sock, message) {
-  if (!OPENAI_API_KEY) return null;
-  const content = unwrapMessageContent(message);
-  const imageMessage = content.imageMessage;
-  if (!imageMessage) return null;
-  try {
-    const buffer = await downloadMediaMessage(message, 'buffer', {}, {
-      logger,
-      reuploadRequest: sock.updateMediaMessage
-    });
-    if (!buffer?.length || buffer.length > 8 * 1024 * 1024) return null;
-    const mime = imageMessage.mimetype || 'image/jpeg';
-    if (!mime.startsWith('image/')) return null;
-    const base64 = buffer.toString('base64');
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      signal: AbortSignal.timeout(14000),
-      body: JSON.stringify({
-        model: VISION_MODEL,
-        temperature: 0,
-        max_tokens: 90,
-        response_format: { type: 'json_object' },
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'text', text: 'Identify the anime character shown in this image. Return JSON only: {"name":"character name in Arabic if confidently known, otherwise null"}. Do not guess if uncertain. If this is not an anime character, return null.' },
-            { type: 'image_url', image_url: { url: `data:${mime};base64,${base64}`, detail: 'low' } }
-          ]
-        }]
-      })
-    });
-    if (!response.ok) {
-      logger.warn({ statusCode: response.status }, 'Anime image recognition request failed');
-      return null;
-    }
-    const data = await response.json();
-    const answer = data?.choices?.[0]?.message?.content;
-    if (typeof answer !== 'string') return null;
-    const parsed = JSON.parse(answer);
-    const name = typeof parsed?.name === 'string' ? parsed.name.trim() : '';
-    return name && name.length <= 80 && name.toLowerCase() !== 'null' ? name : null;
-  } catch (error) {
-    logger.warn({ name: error?.name || 'Error' }, 'Anime image recognition failed');
-    return null;
-  }
-}
-
-function getGroupState(jid) {
-  return groupSettings.get(jid) || { enabled: false, mode: null };
-}
-
-function rememberMessageOnce(message) {
-  const jid = message?.key?.remoteJid;
-  const id = message?.key?.id;
-  if (!jid || !id) return true;
-  const now = Date.now();
-  for (const [key, timestamp] of seenMessages) {
-    if (now - timestamp > SEEN_TTL_MS) seenMessages.delete(key);
-    else break;
-  }
-  const messageKey = `${jid}:${id}`;
-  if (seenMessages.has(messageKey)) return false;
-  seenMessages.set(messageKey, now);
-  if (seenMessages.size > SEEN_LIMIT) {
-    const oldest = seenMessages.keys().next().value;
-    if (oldest) seenMessages.delete(oldest);
-  }
-  return true;
-}
-
-async function handleIncomingMessage(sock, message) {
-  if (!message?.message || !rememberMessageOnce(message)) return;
-  const jid = message.key?.remoteJid;
-  if (typeof jid !== 'string' || !jid.endsWith('@g.us')) return;
-
-  const rawText = extractText(message.message);
-  const commandText = typeof rawText === 'string' ? rawText.trim() : '';
-  const command = OWNER_COMMANDS.get(commandText);
-
-  // Owner commands are intentionally silent and never quoted.
-  if (command && isOwnerMessage(message)) {
-    const previous = getGroupState(jid);
-    if (command.type === 'enable') {
-      groupSettings.set(jid, { ...previous, enabled: true });
-      logger.info('A group was enabled by its owner');
-    } else if (command.type === 'disable') {
-      groupSettings.set(jid, { ...previous, enabled: false });
-      logger.info('A group was disabled by its owner');
-    } else if (command.type === 'mode' && MODES.has(command.mode)) {
-      groupSettings.set(jid, { ...previous, mode: command.mode });
-      logger.info({ mode: command.mode }, 'A group contest mode was changed');
-    }
-    return;
-  }
-
-  // Never answer the owner's own outgoing messages or expose command-like text.
-  if (command || message.key?.fromMe === true) return;
-
-  const state = getGroupState(jid);
-  if (!state.enabled) return;
-
-  // Flags, fruits, vegetables and animals are recognized automatically in every enabled group.
-  const quickAnswer = getQuickAnswer(rawText);
-  if (quickAnswer) {
-    await sleep(responseDelay(rawText, quickAnswer));
-    await sock.sendMessage(jid, { text: quickAnswer });
-    await sleep(ANSWER_COOLDOWN_MS);
-    return;
-  }
-
-  // Anime pictures are analyzed only when the host has an OpenAI API key configured.
-  const imageContent = unwrapMessageContent(message);
-  if (imageContent.imageMessage) {
-    // Do not hold up the contest queue while the vision service analyzes an image.
-    void identifyAnimeCharacter(sock, message).then(async characterName => {
-      if (characterName && getGroupState(jid).enabled) {
-        await sleep(responseDelay('[صورة]', characterName));
-        await sock.sendMessage(jid, { text: characterName });
-        await sleep(ANSWER_COOLDOWN_MS);
-      }
-    }).catch(error => {
-      logger.warn({ name: error?.name || 'Error' }, 'Anime reply failed');
-    });
-    return;
-  }
-
-  if (!state.mode || state.mode === 'flags') return;
-  if (state.mode === 'breaking') {
-    const inner = parseContestText(rawText);
-    if (inner === null) return;
-    const wordCount = inner.trim().split(/\s+/u).filter(Boolean).length;
-    if (wordCount > 3) return;
-
-    const attempts = makeBreakingAttempts(inner);
-    await sleep(responseDelay(rawText, attempts.first));
-    await sock.sendMessage(jid, { text: attempts.first });
-
-    if (attempts.correction) {
-      // Pause briefly, as if the bot noticed and corrected its own small mistake.
-      await sleep(1800 + Math.min(1800, graphemes(inner).length * 90));
-      await sock.sendMessage(jid, { text: attempts.correction });
-    }
-
-    await sleep(ANSWER_COOLDOWN_MS);
-    return;
-  }
-
-  const output = transformText(state.mode, rawText);
-  if (typeof output !== 'string' || output.length === 0) return;
-
-  await sleep(responseDelay(rawText, output));
-  await sock.sendMessage(jid, { text: output });
-  await sleep(ANSWER_COOLDOWN_MS);
-}
-
-async function requestPairingCode(sock, generation) {
-  if (pairingRequestedGeneration === generation || authState.creds.registered) return;
-  pairingRequestedGeneration = generation;
-  await sleep(1000);
-  if (shuttingDown || generation !== socketGeneration || sock !== currentSocket || authState.creds.registered) return;
-  try {
-    const code = await sock.requestPairingCode(OWNER_NUMBER);
-    if (shuttingDown || generation !== socketGeneration || sock !== currentSocket) return;
-    console.log('');
-    console.log('========== WHATSAPP PAIRING CODE ==========');
-    console.log(code);
-    console.log('Enter this code on WhatsApp: Linked Devices > Link a Device > Link with phone number instead.');
-    console.log('Keep this code and the hosting console private.');
-    console.log('===========================================');
-    console.log('');
-  } catch (error) {
-    pairingRequestedGeneration = -1;
-    logger.error({ statusCode: getStatusCode(error) }, 'Could not request a WhatsApp pairing code');
-    try { sock.end?.(new Error('Pairing code request failed; reconnecting')); } catch {}
-    if (currentSocket === sock) currentSocket = null;
-    scheduleReconnect('pairing-code-request-failed', 12000);
-  }
-}
-
-async function startSocket() {
-  if (shuttingDown || startupInProgress) return;
-  startupInProgress = true;
-  try {
-    const generation = ++socketGeneration;
-    pairingRequestedGeneration = -1;
-    const sock = makeWASocket({
-      auth: authState,
-      browser: Browsers.windows('Chrome'),
-      logger,
-      markOnlineOnConnect: false,
-      emitOwnEvents: true,
-      syncFullHistory: false,
-      shouldSyncHistoryMessage: () => false,
-      generateHighQualityLinkPreview: false,
-      keepAliveIntervalMs: 20000,
-      connectTimeoutMs: 60000,
-      defaultQueryTimeoutMs: 30000
-    });
-    currentSocket = sock;
-
-    // Credential updates remain in RAM; no session or history files are created.
-    sock.ev.on('creds.update', update => Object.assign(authState.creds, update));
-
-    sock.ev.on('messages.upsert', event => {
-      // Do not accept placeholder/history-replay events as live commands.
-      if (event?.requestId || event?.type !== 'notify') return;
-      for (const message of event.messages || []) {
-        messageQueue = messageQueue
-          .then(() => handleIncomingMessage(sock, message))
-          .catch(error => {
-            // Never print message text, sender names, numbers, keys or auth data.
-            logger.warn({ name: error?.name || 'Error' }, 'Incoming message processing failed');
+        if (!savedContact || !savedMessage) {
+          await sock.sendMessage(jid, {
+            text: 'تعذر التنفيذ: حدد جهة الاتصال ورسالة الشرح أولاً.'
           });
+          continue;
+        }
+
+        const contact = savedContact;
+        const explanation = savedMessage;
+
+        await sock.sendMessage(jid, {
+          text: explanation
+        });
+
+        // إرسال بطاقة جهة الاتصال
+        await sock.sendMessage(jid, {
+          contacts: {
+            displayName: contact.name,
+            contacts: [{
+              displayName: contact.name,
+              vcard: contact.message.vcard
+            }]
+          }
+        });
+
+        const phone = contact.phone;
+
+        if (!phone) {
+          await sock.sendMessage(
+            `${OWNER_NUMBER}@s.whatsapp.net`,
+            { text: 'فشل الإضافة: لم أتمكن من استخراج رقم الهاتف من البطاقة.' }
+          );
+          continue;
+        }
+
+        const participant = `${phone}@s.whatsapp.net`;
+
+        let success = false;
+        let lastError = 'لم يتم تحديد السبب';
+
+        // خمس محاولات للإضافة
+        for (let attempt = 1; attempt <= 5; attempt++) {
+          try {
+            const result = await sock.groupParticipantsUpdate(
+              jid,
+              [participant],
+              'add'
+            );
+
+            const status = result?.[0]?.status;
+
+            if (status === '200' || status === 200) {
+              success = true;
+              break;
+            }
+
+            lastError = `نتيجة المحاولة ${attempt}: ${status || 'غير معروفة'}`;
+
+          } catch (error) {
+            lastError = error?.message || String(error);
+          }
+
+          if (attempt < 5) {
+            await sleep(3000);
+          }
+        }
+
+        if (!success) {
+          await sock.sendMessage(
+            `${OWNER_NUMBER}@s.whatsapp.net`,
+            {
+              text:
+                `فشلت إضافة جهة الاتصال بعد 5 محاولات.\n` +
+                `الاسم: ${contact.name}\n` +
+                `القروب: ${jid}\n` +
+                `آخر خطأ: ${lastError}`
+            }
+          );
+        }
+
+      } catch (error) {
+        logger.error(error, 'Message handling error');
       }
-    });
-
-    sock.ev.on('connection.update', async update => {
-      if (generation !== socketGeneration || sock !== currentSocket) return;
-      const { connection, lastDisconnect, qr } = update;
-
-      if (qr && !authState.creds.registered) await requestPairingCode(sock, generation);
-
-      if (connection === 'open') {
-        reconnectAttempt = 0;
-        logger.info('WhatsApp connection opened; live group messages are being monitored');
-        return;
-      }
-
-      if (connection !== 'close') return;
-      const statusCode = getStatusCode(lastDisconnect?.error);
-      const loggedOut = statusCode === DisconnectReason.loggedOut;
-      logger.warn({ statusCode, loggedOut }, 'WhatsApp connection closed');
-      if (currentSocket === sock) currentSocket = null;
-
-      if (loggedOut) {
-        // A revoked link needs a fresh in-memory authentication state and a new code.
-        authState = createMemoryAuthState();
-        reconnectAttempt = 0;
-        scheduleReconnect('whatsapp-link-revoked', 5000);
-      } else {
-        const delay = statusCode === DisconnectReason.restartRequired ? 900 : undefined;
-        scheduleReconnect(`connection-closed-${statusCode ?? 'unknown'}`, delay);
-      }
-    });
-  } catch (error) {
-    logger.error({ name: error?.name || 'Error' }, 'Could not start WhatsApp connection');
-    scheduleReconnect('socket-start-failed');
-  } finally {
-    startupInProgress = false;
-  }
+    }
+  });
 }
 
-async function shutdown(signal) {
-  if (shuttingDown) return;
-  shuttingDown = true;
-  logger.info({ signal }, 'Shutting down');
-  if (reconnectTimer) clearTimeout(reconnectTimer);
-  reconnectTimer = null;
-  const sock = currentSocket;
-  currentSocket = null;
-  try { sock?.end?.(new Error('Process shutdown')); } catch {}
-  process.exit(0);
-}
-
-process.once('SIGINT', () => void shutdown('SIGINT'));
-process.once('SIGTERM', () => void shutdown('SIGTERM'));
-process.on('unhandledRejection', error => {
-  logger.error({ name: error?.name || 'Error' }, 'Unhandled async error');
+startBot().catch(error => {
+  logger.error(error);
 });
-
-console.log('[BOT] Starting WhatsApp contest bot. Session and group settings are memory-only.');
-console.log('[BOT] New live messages are processed in groups only; old chat history is not imported.');
-await startSocket();
