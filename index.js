@@ -1,8 +1,8 @@
-
 import makeWASocket, {
   Browsers,
   DisconnectReason,
-  initAuthCreds
+  initAuthCreds,
+  downloadMediaMessage
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
 
@@ -10,6 +10,8 @@ import pino from 'pino';
 // You may also set OWNER_NUMBER in your hosting environment variables.
 const OWNER_NUMBER = String(process.env.OWNER_NUMBER || '15879975734').replace(/\D/g, '');
 const LOG_LEVEL = process.env.LOG_LEVEL || 'warn';
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
+const VISION_MODEL = process.env.VISION_MODEL || 'gpt-4o-mini';
 const logger = pino({ level: LOG_LEVEL });
 
 if (!/^\d{7,16}$/.test(OWNER_NUMBER)) {
@@ -53,16 +55,26 @@ const ANIMALS = Object.freeze({
 });
 
 const MODES = new Set(['writing', 'breaking', 'reverse', 'flags', 'fruits', 'animals']);
-const MODE_LABELS = Object.freeze({ writing: 'الكتابة', breaking: 'التفكيك', reverse: 'العكس', flags: 'الأعلام', fruits: 'الفواكه والخضراوات', animals: 'الحيوانات' });
+const MODE_LABELS = Object.freeze({
+  writing: 'الكتابة', breaking: 'التفكيك', reverse: 'العكس',
+  flags: 'الأعلام', fruits: 'الفواكه', animals: 'الحيوانات'
+});
 const OWNER_COMMANDS = new Map([
-  ['💜طك', { type: 'enable' }],
-  ['🍃شلع', { type: 'disable' }],
-  ['*كتابة', { type: 'mode', mode: 'writing' }],
-  ['*تفكيك', { type: 'mode', mode: 'breaking' }],
-  ['*عكس', { type: 'mode', mode: 'reverse' }],
-  ['*أعلام', { type: 'mode', mode: 'flags' }],
-  ['*فاكهة', { type: 'mode', mode: 'fruits' }],
-  ['*حيوانات', { type: 'mode', mode: 'animals' }]
+  // أوامر التشغيل السرية
+  ['ِ؛زط', { type: 'enable' }],
+  ['!شو', { type: 'enable' }],
+  ['ـبيو', { type: 'enable' }],
+  // أوامر الإيقاف السرية
+  ['؛طز', { type: 'disable' }],
+  ['!وش', { type: 'disable' }],
+  ['ـويب', { type: 'disable' }],
+  // أوامر اختيار نوع المسابقة
+  ['!كتابة', { type: 'mode', mode: 'writing' }],
+  ['!تفكيك', { type: 'mode', mode: 'breaking' }],
+  ['!عكس', { type: 'mode', mode: 'reverse' }],
+  ['!أعلام', { type: 'mode', mode: 'flags' }],
+  ['!فواكه', { type: 'mode', mode: 'fruits' }],
+  ['!حيوانات', { type: 'mode', mode: 'animals' }]
 ]);
 
 // Only live group settings are kept in RAM. Nothing is written to disk.
@@ -194,8 +206,7 @@ function transformText(mode, rawText) {
   const inner = parseContestText(rawText);
   if (inner === null) return null;
 
-  // Ignore long text in writing, breaking and reverse modes.
-  // Only up to 3 words are accepted.
+  // Keep the original three-word limit for text modes only.
   if (['writing', 'breaking', 'reverse'].includes(mode)) {
     const wordCount = inner.trim().split(/\s+/u).filter(Boolean).length;
     if (wordCount > 3) return null;
@@ -203,38 +214,102 @@ function transformText(mode, rawText) {
 
   switch (mode) {
     case 'writing': return inner;
-    case 'breaking': {
-      const letters = graphemes(inner);
-      const separators = [' ', '  ', '. ', '.  ', ' . ', '  . '];
-      return letters.map((letter, index) => index === 0 ? letter : separators[Math.floor(Math.random() * separators.length)] + letter).join('');
-    }
+    case 'breaking': return graphemes(inner).join(' ');
     case 'reverse': return graphemes(inner).reverse().join('');
     case 'flags': return FLAGS[inner] ?? null;
     default: return null;
   }
 }
 
+function unwrapMessageContent(message) {
+  let content = message?.message;
+  for (let i = 0; i < 8 && content; i += 1) {
+    const wrapped = content.ephemeralMessage?.message
+      ?? content.viewOnceMessage?.message
+      ?? content.viewOnceMessageV2?.message
+      ?? content.viewOnceMessageV2Extension?.message
+      ?? content.documentWithCaptionMessage?.message
+      ?? content.deviceSentMessage?.message;
+    if (!wrapped) break;
+    content = wrapped;
+  }
+  return content || {};
+}
+
 function normalizeEmoji(value) {
   return String(value || '').trim().replace(/\uFE0F/g, '');
 }
 
-function getQuickAnswer(rawText, mode) {
+function getQuickAnswer(rawText) {
   const value = normalizeEmoji(rawText);
   if (!value) return null;
-  if (mode === 'flags') return FLAGS[value] ?? null;
-  if (mode === 'fruits') return FRUITS[value] ?? VEGETABLES[value] ?? null;
-  if (mode === 'animals') return ANIMALS[value] ?? null;
+  if (FLAGS[value]) return FLAGS[value];
+  if (FRUITS[value]) return FRUITS[value];
+  if (VEGETABLES[value]) return VEGETABLES[value];
+  if (ANIMALS[value]) return ANIMALS[value];
   return null;
 }
 
-// Faster response timing: short answers are almost immediate.
-// Longer questions and answers take a little more time.
-function responseDelay(inputText, outputText) {
+function responseDelay(inputText, outputText = '') {
+  // Longer incoming text and longer answers receive a gradually longer pause.
   const inputLength = graphemes(String(inputText || '')).length;
   const outputLength = graphemes(String(outputText || '')).length;
   const totalLength = inputLength + outputLength;
+  return Math.min(2800, 300 + totalLength * 35);
+}
 
-  return Math.min(1200, 150 + totalLength * 20);
+// Minimum pause between successful answers in the shared message queue.
+const ANSWER_COOLDOWN_MS = 3000;
+
+async function identifyAnimeCharacter(sock, message) {
+  if (!OPENAI_API_KEY) return null;
+  const content = unwrapMessageContent(message);
+  const imageMessage = content.imageMessage;
+  if (!imageMessage) return null;
+  try {
+    const buffer = await downloadMediaMessage(message, 'buffer', {}, {
+      logger,
+      reuploadRequest: sock.updateMediaMessage
+    });
+    if (!buffer?.length || buffer.length > 8 * 1024 * 1024) return null;
+    const mime = imageMessage.mimetype || 'image/jpeg';
+    if (!mime.startsWith('image/')) return null;
+    const base64 = buffer.toString('base64');
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      signal: AbortSignal.timeout(14000),
+      body: JSON.stringify({
+        model: VISION_MODEL,
+        temperature: 0,
+        max_tokens: 90,
+        response_format: { type: 'json_object' },
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Identify the anime character shown in this image. Return JSON only: {"name":"character name in Arabic if confidently known, otherwise null"}. Do not guess if uncertain. If this is not an anime character, return null.' },
+            { type: 'image_url', image_url: { url: `data:${mime};base64,${base64}`, detail: 'low' } }
+          ]
+        }]
+      })
+    });
+    if (!response.ok) {
+      logger.warn({ statusCode: response.status }, 'Anime image recognition request failed');
+      return null;
+    }
+    const data = await response.json();
+    const answer = data?.choices?.[0]?.message?.content;
+    if (typeof answer !== 'string') return null;
+    const parsed = JSON.parse(answer);
+    const name = typeof parsed?.name === 'string' ? parsed.name.trim() : '';
+    return name && name.length <= 80 && name.toLowerCase() !== 'null' ? name : null;
+  } catch (error) {
+    logger.warn({ name: error?.name || 'Error' }, 'Anime image recognition failed');
+    return null;
+  }
 }
 
 function getGroupState(jid) {
@@ -291,12 +366,28 @@ async function handleIncomingMessage(sock, message) {
   const state = getGroupState(jid);
   if (!state.enabled) return;
 
-  // Emoji answers are handled only by the matching selected activity.
-  const quickAnswer = getQuickAnswer(rawText, state.mode);
+  // Flags, fruits, vegetables and animals are recognized automatically in every enabled group.
+  const quickAnswer = getQuickAnswer(rawText);
   if (quickAnswer) {
     await sleep(responseDelay(rawText, quickAnswer));
     await sock.sendMessage(jid, { text: quickAnswer });
-    await sleep(3000);
+    await sleep(ANSWER_COOLDOWN_MS);
+    return;
+  }
+
+  // Anime pictures are analyzed only when the host has an OpenAI API key configured.
+  const imageContent = unwrapMessageContent(message);
+  if (imageContent.imageMessage) {
+    // Do not hold up the contest queue while the vision service analyzes an image.
+    void identifyAnimeCharacter(sock, message).then(async characterName => {
+      if (characterName && getGroupState(jid).enabled) {
+        await sleep(responseDelay('[صورة]', characterName));
+        await sock.sendMessage(jid, { text: characterName });
+        await sleep(ANSWER_COOLDOWN_MS);
+      }
+    }).catch(error => {
+      logger.warn({ name: error?.name || 'Error' }, 'Anime reply failed');
+    });
     return;
   }
 
@@ -306,7 +397,7 @@ async function handleIncomingMessage(sock, message) {
 
   await sleep(responseDelay(rawText, output));
   await sock.sendMessage(jid, { text: output });
-  await sleep(3000);
+  await sleep(ANSWER_COOLDOWN_MS);
 }
 
 async function requestPairingCode(sock, generation) {
@@ -398,7 +489,6 @@ async function startSocket() {
         scheduleReconnect(`connection-closed-${statusCode ?? 'unknown'}`, delay);
       }
     });
-
   } catch (error) {
     logger.error({ name: error?.name || 'Error' }, 'Could not start WhatsApp connection');
     scheduleReconnect('socket-start-failed');
