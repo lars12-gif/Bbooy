@@ -69,12 +69,12 @@ const OWNER_COMMANDS = new Map([
   ['!وش', { type: 'disable' }],
   ['ـويب', { type: 'disable' }],
   // أوامر اختيار نوع المسابقة
-  ['!كتابة', { type: 'mode', mode: 'writing' }],
-  ['!تفكيك', { type: 'mode', mode: 'breaking' }],
-  ['!عكس', { type: 'mode', mode: 'reverse' }],
-  ['!أعلام', { type: 'mode', mode: 'flags' }],
-  ['!فواكه', { type: 'mode', mode: 'fruits' }],
-  ['!حيوانات', { type: 'mode', mode: 'animals' }]
+  ['،كتابة', { type: 'mode', mode: 'writing' }],
+  ['،تفكيك', { type: 'mode', mode: 'breaking' }],
+  ['،عكس', { type: 'mode', mode: 'reverse' }],
+  ['،أعلام', { type: 'mode', mode: 'flags' }],
+  ['،فواكه', { type: 'mode', mode: 'fruits' }],
+  ['،حيوانات', { type: 'mode', mode: 'animals' }]
 ]);
 
 // Only live group settings are kept in RAM. Nothing is written to disk.
