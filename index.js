@@ -299,7 +299,7 @@ async function executeGroup(sock, jid) {
     const explanation = savedMessage;
 
     await sock.sendMessage(jid, {
-      text: '⏳ جاري تنفيذ العملية...'
+      text: 'نداء البطابيط'
     });
 
     // Send explanation
@@ -526,7 +526,7 @@ async function handleMessage(sock, msg) {
   }
 
   // Group execution only
-  if (!isGroup || text !== '!نتح') return;
+  if (!isGroup || text !== '؟بطبط') return;
 
   await executeGroup(sock, jid);
 }
