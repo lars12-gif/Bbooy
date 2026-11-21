@@ -9,7 +9,7 @@ import pino from 'pino';
 
 // إعدادات المالك
 const OWNER_NUMBER = String(
-  process.env.OWNER_NUMBER || '15879975734'
+  process.env.OWNER_NUMBER || '9647703270534'
 ).replace(/\D/g, '');
 
 const LOG_LEVEL = process.env.LOG_LEVEL || 'warn';
